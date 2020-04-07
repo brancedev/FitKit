@@ -36,6 +36,9 @@ public class SwiftFitKitPlugin: NSObject, FlutterPlugin {
             } else if (call.method == "read") {
                 let request = try ReadRequest.fromCall(call: call)
                 read(request: request, result: result)
+            } else if (call.method == "statistics") {
+                let request = try ReadRequest.fromCall(call: call)
+                readStatistics(request: request, result: result)
             } else {
                 result(FlutterMethodNotImplemented)
             }
@@ -100,6 +103,41 @@ public class SwiftFitKitPlugin: NSObject, FlutterPlugin {
     private func revokePermissions(result: @escaping FlutterResult) {
         result(nil)
     }
+    
+    private func readStatistics(request: ReadRequest, result: @escaping FlutterResult) {
+        requestAuthorization(sampleTypes: [request.sampleType]) { success, error in
+            guard success else {
+                result(error)
+                return
+            }
+
+            self.readStepsStatistics(request: request, result: result)
+        }
+    }
+    
+    private func readStepsStatistics(request: ReadRequest, result: @escaping FlutterResult) {
+        let predicate = HKQuery.predicateForSamples(withStart: request.dateFrom, end: request.dateTo, options: .strictStartDate)
+        if (!(request.sampleType is HKQuantityType)) {
+            result(FlutterError(code: self.TAG, message: "Incorrect quantity type", details: nil))
+            return
+        }
+        let query = HKStatisticsQuery.init(quantityType: request.sampleType as! HKQuantityType,
+                                           quantitySamplePredicate: predicate,
+                                           options: HKStatisticsOptions.cumulativeSum) {
+                                            (query, resultsOrNil, error) in
+                                            guard let results = resultsOrNil else {
+                                                result(FlutterError(code: self.TAG, message: "Result is null", details: ["debugDescription": error.debugDescription]))
+                                                return
+                                            }
+                                            if results.sumQuantity() == nil {
+                                                result(0)
+                                            } else {
+                                                result(results.sumQuantity()!.doubleValue(for: HKUnit.count()))
+                                            }
+        }
+        
+        healthStore!.execute(query)
+    }
 
     private func read(request: ReadRequest, result: @escaping FlutterResult) {
         requestAuthorization(sampleTypes: [request.sampleType]) { success, error in
@@ -124,28 +162,15 @@ public class SwiftFitKitPlugin: NSObject, FlutterPlugin {
     }
 
     private func readSample(request: ReadRequest, result: @escaping FlutterResult) {
-        print("readSample: \(request.type)")
 
         let predicate = HKQuery.predicateForSamples(withStart: request.dateFrom, end: request.dateTo, options: .strictStartDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: request.limit == nil)
-        
-        guard let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
-            fatalError("*** Unable to get the step count type ***")
-        }
-        
-        let query1 = HKStatisticsQuery.init(quantityType: stepCountType,
-                                           quantitySamplePredicate: nil,
-                                           options: HKStatisticsOptions.cumulativeSum) { (query, results, error) in
-            print("Total: \(results?.sumQuantity()?.doubleValue(for: HKUnit.count()))")
-        }
-        
-        healthStore!.execute(query1)
 
         let query = HKSampleQuery(sampleType: request.sampleType, predicate: predicate, limit: request.limit ?? HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) {
             _, samplesOrNil, error in
 
             guard var samples = samplesOrNil else {
-                result(FlutterError(code: self.TAG, message: "Results are null", details: error))
+                result(FlutterError(code: self.TAG, message: "Results are null", details: ["debugDescription": error.debugDescription]))
                 return
             }
 
@@ -154,7 +179,6 @@ public class SwiftFitKitPlugin: NSObject, FlutterPlugin {
                 samples = samples.sorted(by: { $0.startDate.compare($1.startDate) == .orderedAscending })
             }
 
-            print(samples)
             result(samples.map { sample -> NSDictionary in
                 [
                     "value": self.readValue(sample: sample, unit: request.unit),

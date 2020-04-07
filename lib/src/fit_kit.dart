@@ -26,6 +26,18 @@ class FitKit {
     return await _channel.invokeMethod('revokePermissions');
   }
 
+  static Future<double> readStatistics(
+    DataType type, {
+    DateTime dateFrom,
+    DateTime dateTo,
+  }) async {
+    return await _channel.invokeMethod('statistics', {
+      "type": _dataTypeToString(type),
+      "date_from": dateFrom?.millisecondsSinceEpoch ?? 1,
+      "date_to": (dateTo ?? DateTime.now()).millisecondsSinceEpoch,
+    });
+  }
+
   /// #### It's not advised to call `await FitKit.read(dataType)` without any extra parameters. This can lead to FAILED BINDER TRANSACTION on Android devices because of the data batch size being too large.
   static Future<List<FitData>> read(
     DataType type, {
@@ -44,8 +56,7 @@ class FitKit {
   }
 
   static Future<FitData> readLast(DataType type) async {
-    return await read(type, limit: 1)
-        .then((results) => results.isEmpty ? null : results[0]);
+    return await read(type, limit: 1).then((results) => results.isEmpty ? null : results[0]);
   }
 
   static String _dataTypeToString(DataType type) {
@@ -75,15 +86,4 @@ class FitKit {
   }
 }
 
-enum DataType {
-  HEART_RATE,
-  STEP_COUNT,
-  HEIGHT,
-  WEIGHT,
-  DISTANCE,
-  ENERGY,
-  WATER,
-  SLEEP,
-  STAND_TIME,
-  EXERCISE_TIME
-}
+enum DataType { HEART_RATE, STEP_COUNT, HEIGHT, WEIGHT, DISTANCE, ENERGY, WATER, SLEEP, STAND_TIME, EXERCISE_TIME }
