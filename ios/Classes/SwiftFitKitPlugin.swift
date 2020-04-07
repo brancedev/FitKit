@@ -128,6 +128,18 @@ public class SwiftFitKitPlugin: NSObject, FlutterPlugin {
 
         let predicate = HKQuery.predicateForSamples(withStart: request.dateFrom, end: request.dateTo, options: .strictStartDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: request.limit == nil)
+        
+        guard let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
+            fatalError("*** Unable to get the step count type ***")
+        }
+        
+        let query1 = HKStatisticsQuery.init(quantityType: stepCountType,
+                                           quantitySamplePredicate: nil,
+                                           options: HKStatisticsOptions.cumulativeSum) { (query, results, error) in
+            print("Total: \(results?.sumQuantity()?.doubleValue(for: HKUnit.count()))")
+        }
+        
+        healthStore!.execute(query1)
 
         let query = HKSampleQuery(sampleType: request.sampleType, predicate: predicate, limit: request.limit ?? HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) {
             _, samplesOrNil, error in
