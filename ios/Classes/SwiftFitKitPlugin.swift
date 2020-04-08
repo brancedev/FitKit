@@ -130,7 +130,7 @@ public class SwiftFitKitPlugin: NSObject, FlutterPlugin {
                                                 return
                                             }
                                             if results.sumQuantity() == nil {
-                                                result(0)
+                                                result(0.0)
                                             } else {
                                                 result(results.sumQuantity()!.doubleValue(for: HKUnit.count()))
                                             }

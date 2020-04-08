@@ -26,7 +26,7 @@ class FitKit {
     return await _channel.invokeMethod('revokePermissions');
   }
 
-  static Future<double> readStatistics(
+  static Future<num> readStatistics(
     DataType type, {
     DateTime dateFrom,
     DateTime dateTo,
