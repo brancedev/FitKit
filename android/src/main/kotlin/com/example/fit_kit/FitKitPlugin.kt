@@ -219,8 +219,8 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
     }
 
     private fun hasActivityRecognitionPermission(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                && ContextCompat.checkSelfPermission(registrar.context(), Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+        return ContextCompat.checkSelfPermission(registrar.context(), Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun hasOAuthPermission(fitnessOptions: FitnessOptions): Boolean {
