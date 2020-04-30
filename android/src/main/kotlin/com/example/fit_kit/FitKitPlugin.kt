@@ -1,7 +1,12 @@
 package com.example.fit_kit
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.fitness.Fitness
@@ -28,7 +33,13 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
         fun onOAuthPermissionsResult(resultCode: Int)
     }
 
+    interface PermissionGrantListener {
+        fun onPermissionGrantResult(granted: Boolean)
+    }
+
     private val oAuthPermissionListeners = mutableListOf<OAuthPermissionsListener>()
+
+    private val permissionGrantListeners = mutableListOf<PermissionGrantListener>()
 
     init {
         registrar.addActivityResultListener { requestCode, resultCode, _ ->
@@ -39,11 +50,22 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
             }
             return@addActivityResultListener false
         }
+                .addRequestPermissionsResultListener { requestCode, permissions, grantResults ->
+                    if (requestCode == REQUEST_ACTIVITY_RECOGNITION_CODE) {
+                        permissionGrantListeners.forEach { it.onPermissionGrantResult(grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) }
+                        permissionGrantListeners.clear()
+                        return@addRequestPermissionsResultListener true
+                    }
+
+                    return@addRequestPermissionsResultListener false
+                }
     }
 
     companion object {
         private const val TAG = "FitKit"
+        private const val ERROR_PERMISSION_REQUEST_FAILED = "ERROR_PERMISSION_REQUEST_FAILED"
         private const val GOOGLE_FIT_REQUEST_CODE = 8008
+        private const val REQUEST_ACTIVITY_RECOGNITION_CODE = 8009
 
         @JvmStatic
         fun registerWith(registrar: Registrar) {
@@ -80,11 +102,7 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
                 .addDataTypes(request.types.map { it.dataType })
                 .build()
 
-        if (hasOAuthPermission(options)) {
-            result.success(true)
-        } else {
-            result.success(false)
-        }
+        result.success(hasOAuthPermission(options) && hasActivityRecognitionPermission())
     }
 
     private fun requestPermissions(request: PermissionsRequest, result: Result) {
@@ -93,7 +111,11 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
                 .build()
 
         requestOAuthPermissions(options, {
-            result.success(true)
+            requestActivityRecognitionPermission({
+                result.success(true)
+            }, {
+                result.success(false)
+            })
         }, {
             result.success(false)
         })
@@ -136,14 +158,20 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
                 .addDataType(request.type.dataType)
                 .build()
 
-        requestOAuthPermissions(options, {
-            when (request) {
-                is ReadRequest.Sample -> readSample(request, result)
-                is ReadRequest.Activity -> readSession(request, result)
-            }
+        requestActivityRecognitionPermission({
+            requestOAuthPermissions(options, {
+                when (request) {
+                    is ReadRequest.Sample -> readSample(request, result)
+                    is ReadRequest.Activity -> readSession(request, result)
+                }
+            }, {
+                result.error(ERROR_PERMISSION_REQUEST_FAILED, "User denied permission access", null)
+            })
         }, {
-            result.error(TAG, "User denied permission access", null)
+            result.error(ERROR_PERMISSION_REQUEST_FAILED, "User denied permission access", null)
         })
+
+
     }
 
     private fun requestOAuthPermissions(fitnessOptions: FitnessOptions, onSuccess: () -> Unit, onError: () -> Unit) {
@@ -159,7 +187,6 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
                 } else {
                     onError()
                 }
-//                oAuthPermissionListeners.remove(this)
             }
         })
 
@@ -168,6 +195,32 @@ class FitKitPlugin(private val registrar: Registrar) : MethodCallHandler {
                 GOOGLE_FIT_REQUEST_CODE,
                 GoogleSignIn.getLastSignedInAccount(registrar.context()),
                 fitnessOptions)
+    }
+
+    private fun requestActivityRecognitionPermission(onSuccess: () -> Unit, onError: () -> Unit) {
+        if (hasActivityRecognitionPermission()) {
+            onSuccess()
+            return
+        }
+
+        permissionGrantListeners.add(object : PermissionGrantListener {
+            override fun onPermissionGrantResult(granted: Boolean) {
+                if (granted) {
+                    onSuccess()
+                } else {
+                    onError()
+                }
+            }
+        })
+
+        ActivityCompat.requestPermissions(registrar.activity(),
+                arrayOf(Manifest.permission.ACTIVITY_RECOGNITION),
+                REQUEST_ACTIVITY_RECOGNITION_CODE)
+    }
+
+    private fun hasActivityRecognitionPermission(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && ContextCompat.checkSelfPermission(registrar.context(), Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun hasOAuthPermission(fitnessOptions: FitnessOptions): Boolean {
